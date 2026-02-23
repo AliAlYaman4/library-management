@@ -4,7 +4,7 @@ A modern, full-stack library management system built with Next.js, featuring rol
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/yourusername/library-management)
 
-**Live Demo:** [https://your-app.vercel.app](https://your-app.vercel.app) *(Coming Soon)*
+**Live Demo:** [https://your-app.vercel.app](https://library-management-murex-nu.vercel.app/dashboard) *(Coming Soon)*
 
 ---
 
