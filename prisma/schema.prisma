@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  LIBRARIAN
+  MEMBER
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String?
+  image         String?
+  password      String?
+  role          UserRole       @default(MEMBER)
+  totalPenalty  Float          @default(0)
+  
+  borrowRecords BorrowRecord[]
+  activityLogs  ActivityLog[]
+  
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  
+  @@index([email])
+  @@map("users")
+}
+
+model Book {
+  id                  String         @id @default(cuid())
+  title               String
+  author              String
+  description         String?
+  genre               String
+  publishedYear       Int
+  totalCopies         Int            @default(1)
+  availableCopies     Int            @default(1)
+  aiSummary           String?
+  recommendedGenres   String[]       @default([])
+  viewCount           Int            @default(0)
+  borrowCount         Int            @default(0)
+  
+  borrowRecords       BorrowRecord[]
+  
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  
+  @@index([title])
+  @@index([author])
+  @@index([genre])
+  @@index([borrowCount])
+  @@map("books")
+}
+
+model BorrowRecord {
+  id         String    @id @default(cuid())
+  userId     String
+  bookId     String
+  borrowedAt DateTime  @default(now())
+  dueDate    DateTime
+  returnedAt DateTime?
+  daysLate   Int       @default(0)
+  penalty    Float     @default(0)
+  
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  book       Book      @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([bookId])
+  @@index([borrowedAt])
+  @@index([dueDate])
+  @@map("borrow_records")
+}
+
+enum ActivityType {
+  BOOK_CREATED
+  BOOK_UPDATED
+  BOOK_DELETED
+  BOOK_BORROWED
+  BOOK_RETURNED
+  USER_ROLE_CHANGED
+  PENALTY_APPLIED
+}
+
+model ActivityLog {
+  id          String       @id @default(cuid())
+  userId      String
+  action      ActivityType
+  entityType  String
+  entityId    String?
+  details     String?
+  ipAddress   String?
+  
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  createdAt   DateTime     @default(now())
+  
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
