@@ -48,8 +48,8 @@ function SignInForm() {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    signIn('google', { callbackUrl });
+  const handleGoogleSignIn = async () => {
+    await signIn('google', { callbackUrl });
   };
 
   const handleQuickLogin = async (role: 'admin' | 'librarian' | 'member') => {

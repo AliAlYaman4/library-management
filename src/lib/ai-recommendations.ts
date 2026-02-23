@@ -21,52 +21,56 @@ interface BorrowHistory {
  * AI-powered book recommendations based on user's borrowing history
  * Uses collaborative filtering and content-based filtering
  */
-export async function getAIRecommendations(userId: string, limit: number = 5): Promise<Book[]> {
+export async function getPersonalizedRecommendations(
+  userId: string,
+  limit: number = 5
+): Promise<Book[]> {
   // Get user's borrowing history
   const userBorrows = await prisma.borrowRecord.findMany({
     where: { userId },
-    include: {
-      book: {
-        select: { genre: true, author: true, id: true },
-      },
-    },
+    include: { book: true },
     orderBy: { borrowedAt: 'desc' },
-    take: 20,
   });
 
   if (userBorrows.length === 0) {
     // New user - return popular books
     return await prisma.book.findMany({
-      orderBy: [
-        { viewCount: 'desc' },
-        { createdAt: 'desc' },
-      ],
+      where: { availableCopies: { gt: 0 } },
+      orderBy: { viewCount: 'desc' },
       take: limit,
     });
   }
 
-  // Extract user preferences
-  const genreFrequency = new Map<string, number>();
-  const authorFrequency = new Map<string, number>();
-  const borrowedBookIds = new Set<string>();
+  // Get books the user has COMPLETED (returned) - don't exclude active borrows
+  const completedBookIds = userBorrows
+    .filter((b) => b.returnedAt !== null)
+    .map((b) => b.bookId);
+
+  // Analyze user preferences
+  const genreCount = new Map<string, number>();
+  const authorCount = new Map<string, number>();
 
   userBorrows.forEach((borrow) => {
-    borrowedBookIds.add(borrow.book.id);
-    
-    const genre = borrow.book.genre;
-    genreFrequency.set(genre, (genreFrequency.get(genre) || 0) + 1);
-    
-    const author = borrow.book.author;
-    authorFrequency.set(author, (authorFrequency.get(author) || 0) + 1);
+    const { genre, author } = borrow.book;
+    genreCount.set(genre, (genreCount.get(genre) || 0) + 1);
+    authorCount.set(author, (authorCount.get(author) || 0) + 1);
+  });
+
+  // Get all available books (excluding only completed/returned books)
+  const availableBooks = await prisma.book.findMany({
+    where: {
+      id: { notIn: completedBookIds },
+      availableCopies: { gt: 0 },
+    },
   });
 
   // Get top genres and authors
-  const topGenres = Array.from(genreFrequency.entries())
+  const topGenres = Array.from(genreCount.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([genre]) => genre);
 
-  const topAuthors = Array.from(authorFrequency.entries())
+  const topAuthors = Array.from(authorCount.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([author]) => author);
@@ -77,7 +81,7 @@ export async function getAIRecommendations(userId: string, limit: number = 5): P
       AND: [
         {
           id: {
-            notIn: Array.from(borrowedBookIds),
+            notIn: completedBookIds,
           },
         },
         {
@@ -103,11 +107,11 @@ export async function getAIRecommendations(userId: string, limit: number = 5): P
     let score = 0;
     
     // Genre match score
-    const genreScore = genreFrequency.get(book.genre) || 0;
+    const genreScore = genreCount.get(book.genre) || 0;
     score += genreScore * 3;
     
     // Author match score
-    const authorScore = authorFrequency.get(book.author) || 0;
+    const authorScore = authorCount.get(book.author) || 0;
     score += authorScore * 2;
     
     // Popularity score
@@ -213,6 +217,17 @@ export async function getReadingSuggestions(userId: string): Promise<{
   newArrivals: Book[];
   similarToLast: Book[];
 }> {
+  // Get currently borrowed book IDs for this user
+  const currentlyBorrowedBookIds = await prisma.borrowRecord.findMany({
+    where: {
+      userId,
+      returnedAt: null,
+    },
+    select: { bookId: true },
+  });
+
+  const borrowedIds = currentlyBorrowedBookIds.map((record) => record.bookId);
+
   // Get trending books (most borrowed in last 30 days)
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   
@@ -223,13 +238,16 @@ export async function getReadingSuggestions(userId: string): Promise<{
     },
     _count: { bookId: true },
     orderBy: { _count: { bookId: 'desc' } },
-    take: 5,
+    take: 10,
   });
 
   const trending = await prisma.book.findMany({
     where: {
-      id: { in: trendingBookIds.map((b) => b.bookId) },
-      availableCopies: { gt: 0 },
+      AND: [
+        { id: { in: trendingBookIds.map((b) => b.bookId) } },
+        { id: { notIn: borrowedIds } },
+        { availableCopies: { gt: 0 } },
+      ],
     },
     take: 5,
   });
@@ -237,6 +255,7 @@ export async function getReadingSuggestions(userId: string): Promise<{
   // Get new arrivals (recently added books)
   const newArrivals = await prisma.book.findMany({
     where: {
+      id: { notIn: borrowedIds },
       availableCopies: { gt: 0 },
     },
     orderBy: { createdAt: 'desc' },
@@ -256,6 +275,7 @@ export async function getReadingSuggestions(userId: string): Promise<{
       where: {
         AND: [
           { id: { not: lastBorrow.bookId } },
+          { id: { notIn: borrowedIds } },
           {
             OR: [
               { genre: lastBorrow.book.genre },

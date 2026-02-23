@@ -84,23 +84,17 @@ export const authOptions: NextAuthOptions = {
     },
 
     async signIn({ user, account, profile }) {
-      if (account?.provider === 'google') {
-        const existingUser = await prisma.user.findUnique({
-          where: { email: user.email! },
-        });
-
-        if (!existingUser) {
-          await prisma.user.create({
-            data: {
-              email: user.email!,
-              name: user.name,
-              image: user.image,
-              role: UserRole.MEMBER,
-            },
-          });
-        }
-      }
+      // Prisma Adapter handles user creation automatically
       return true;
+    },
+
+    async redirect({ url, baseUrl }) {
+      // If the URL is relative, prepend the base URL
+      if (url.startsWith('/')) return `${baseUrl}${url}`;
+      // If the URL is on the same origin, allow it
+      else if (new URL(url).origin === baseUrl) return url;
+      // Default to dashboard
+      return `${baseUrl}/dashboard`;
     },
   },
 
